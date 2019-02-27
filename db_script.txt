@@ -1,0 +1,606 @@
+CREATE TABLE  company_ann_reports 
+   (	URL VARCHAR(500), 
+	NAME VARCHAR(500), 
+	REGNUMBER VARCHAR(500), 
+	YEAR VARCHAR(200), 
+	work_cap VARCHAR(200), 
+	COS VARCHAR(200), 
+	curr_ass VARCHAR(200), 
+	fix_ass VARCHAR(200), 
+	tot_ass VARCHAR(200), 
+	depr_amort VARCHAR(200), 
+	PPE VARCHAR(200), 
+	SGA VARCHAR(200), 
+	Long_term_d VARCHAR(200), 
+	curr_lia VARCHAR(200),
+	inc_tax VARCHAR(200),
+	cash VARCHAR(200),
+	sales VARCHAR(200)
+   );
+   
+CREATE INDEX  company_ann_IDX2 ON  company_ann_reports (REGNUMBER);
+
+CREATE TABLE  PY_MAIN 
+   (	URL VARCHAR(500), 
+	VALUE_FIELD VARCHAR(10000), 
+	TYPE VARCHAR(200), 
+	YEAR VARCHAR(200)
+   );
+
+CREATE INDEX  PY_MAIN_IDX1 ON  PY_MAIN (URL);
+
+CREATE INDEX  PY_MAIN_IDX2 ON  PY_MAIN (URL, TYPE, YEAR);
+
+
+CREATE TABLE  PY_PRE_INSERT 
+   (	URL VARCHAR(500), 
+	NON_FRACTION VARCHAR(10000), 
+	TYPE VARCHAR(200), 
+	RN NUMBER
+   );
+
+CREATE INDEX  PY_PRE_INSERT_IDX1 ON  PY_PRE_INSERT (URL);
+
+
+CREATE DEFINER=`clearsightext`@`%` PROCEDURE `sp_company_value`(in p_url varchar(4000))
+begin
+declare v_name varchar(2000);
+declare v_reg varchar(2000);
+declare v_url varchar(500);
+declare v_st_pos double;
+declare v_en_pos double;
+declare v_value varchar(2000);
+declare v_year varchar(2000);
+declare v_de double DEFAULT 0;
+declare v_tot_ass_2018 double DEFAULT 0;
+declare v_tot_liab_2018 double DEFAULT 0;
+declare v_equi_2018 double DEFAULT 0;
+declare v_tot_ass_2017 double DEFAULT 0;
+declare v_tot_liab_2017 double DEFAULT 0;
+declare v_equi_2017 double DEFAULT 0;
+declare v_cnt,v_rn double DEFAULT 0;
+declare v_cl_2017 double DEFAULT 0;
+declare v_cl_2018 double DEFAULT 0;
+declare v_ta_2017 double DEFAULT 0;
+declare v_ta_2018 double DEFAULT 0;
+declare v_sq_2017 double DEFAULT 0;
+declare v_sq_2018 double DEFAULT 0;
+declare v_sign varchar(10);
+declare v_TYPE varchar(10);
+declare v_NON_FRACTION varchar(10000);
+declare not_found int default 0;
+ DECLARE done INT DEFAULT FALSE;
+
+DECLARE cursor_i CURSOR FOR select NON_FRACTION,TYPE,RN from PY_PRE_INSERT where url=v_url order by rn;
+ declare continue handler for not found set not_found = 1; 
+#declare continue handler for not found set done = TRUE; 
+
+set v_url =p_url;
+delete from PY_MAIN where url=v_url;
+delete from PY_COMP_FINAL where url=v_url;
+
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:ix="http://www.xbrl.org/2008/inlineXBRL"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:bus="http://xbrl.frc.org.uk/cd/2014-09-01/business"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:core="http://xbrl.frc.org.uk/fr/2014-09-01/core"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' scale="0"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' decimals="0"','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,'<span>','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,'</span>','') where url=v_url;
+update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,'<span style="margin-right: 0px;">','') where url=v_url;
+
+OPEN cursor_i;
+  read_loop: LOOP
+    FETCH cursor_i INTO v_NON_FRACTION,v_TYPE,v_RN;
+    IF done THEN
+      LEAVE read_loop;
+    END IF;
+set v_st_pos =0;
+set v_en_pos =0;
+set v_value = null;
+set v_year =null;
+set v_cnt =0;
+set v_sign =null;
+if v_TYPE='CompanyName' then
+    set v_st_pos = instr(v_NON_FRACTION,':EntityCurrentLegalOrRegisteredName">')+37;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonnumeric>');
+    set v_value = substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos);
+    if instr(v_value,'<span')>0 then
+        set v_value =substr(v_value,instr(v_value,'<span'),200);
+        set v_value =substr(v_value,1,instr(v_value,'</')-1);
+        set v_value =substr(v_value,instr(v_value,'>')+1,200);
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Company Name';
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD) values(v_url,'Company Name',v_value);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Company Name';
+    end if;
+end if;
+if v_TYPE='RegisteredNumber' then
+    set v_st_pos = instr(v_NON_FRACTION,':UKCompaniesHouseRegisteredNumber">')+35;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonnumeric>');
+    set v_value = substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos);
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Registered Number';
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD) values(v_url,'Registered Number',v_value);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Registered Number';
+    end if;
+end if;
+
+if v_TYPE='PropertyPlantEquipment' then
+    if instr(v_NON_FRACTION,':PropertyPlantEquipment" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':PropertyPlantEquipment" unitref="GBP">')+39;
+    elseif instr(v_NON_FRACTION,':PropertyPlantEquipment" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':PropertyPlantEquipment" sign="-" unitref="GBP">')+48;    
+        set v_sign ='-';
+    elseif instr(v_NON_FRACTION,':PropertyPlantEquipment" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':PropertyPlantEquipment" unitref="u1">')+38;
+        
+    end if;
+    
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;  
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Fixed Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Fixed Assets',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Fixed Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='Creditors' then
+    if instr(v_NON_FRACTION,':Creditors" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Creditors" unitref="GBP">')+26;
+    elseif instr(v_NON_FRACTION,':Creditors" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Creditors" sign="-" unitref="GBP">')+35;    
+        set v_sign ='-';
+    elseif instr(v_NON_FRACTION,':Creditors" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Creditors" unitref="u1">')+25;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Creditors' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Creditors',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Creditors' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='CashBankInHand' then
+    if instr(v_NON_FRACTION,':CashBankInHand" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankInHand" unitref="GBP">')+31;
+    elseif instr(v_NON_FRACTION,':CashBankInHand" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankInHand" sign="-" unitref="GBP">')+40;    
+        set v_sign ='-';    
+    elseif instr(v_NON_FRACTION,':CashBankInHand" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankInHand" unitref="u1">')+30;
+    end if;
+    set v_st_pos = instr(v_NON_FRACTION,':CashBankInHand" unitref="GBP">')+31;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='CashBankInHand' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'CashBankInHand',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='CashBankInHand' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='CalledUpShareCapital' then
+    if instr(v_NON_FRACTION,':CalledUpShareCapital" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CalledUpShareCapital" unitref="GBP">')+38;
+    elseif instr(v_NON_FRACTION,':CalledUpShareCapital" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CalledUpShareCapital" sign="-" unitref="GBP">')+46;    
+        set v_sign ='-'; 
+    elseif instr(v_NON_FRACTION,':CalledUpShareCapital" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CalledUpShareCapital" unitref="u1">')+37;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='CalledUpShareCapital' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'CalledUpShareCapital',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='CalledUpShareCapital' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='NetAssetsLiabilitiesIncludingPensionAssetLiability' then
+    if instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" unitref="GBP">')+68;
+    elseif instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" sign="-" unitref="GBP">')+76;    
+        set v_sign ='-';     
+    elseif instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetAssetsLiabilitiesIncludingPensionAssetLiability" unitref="u1">')+67;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='NetAssetsLiabilitiesIncludingPensionAssetLiability' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'NetAssetsLiabilitiesIncludingPensionAssetLiability',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='NetAssetsLiabilitiesIncludingPensionAssetLiability' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='Debtors' then
+    if instr(v_NON_FRACTION,':Debtors" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Debtors" unitref="GBP">')+24;
+    elseif instr(v_NON_FRACTION,':Debtors" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Debtors" sign="-" unitref="GBP">')+33;    
+        set v_sign ='-';     
+    elseif instr(v_NON_FRACTION,':Debtors" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Debtors" unitref="u1">')+23;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Debtors' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Debtors',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Debtors' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='CashBankOnHand' then
+    if instr(v_NON_FRACTION,':CashBankOnHand" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankOnHand" unitref="GBP">')+31;
+    elseif instr(v_NON_FRACTION,':CashBankOnHand" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankOnHand" sign="-" unitref="GBP">')+40;    
+        set v_sign ='-';         
+    elseif instr(v_NON_FRACTION,':CashBankOnHand" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CashBankOnHand" unitref="u1">')+30;
+    end if;    
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Cash Bank On Hand' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Cash Bank On Hand',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Cash Bank On Hand' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='FixedAssets' then
+    if instr(v_NON_FRACTION,':FixedAssets" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':FixedAssets" unitref="GBP">')+28;
+    elseif instr(v_NON_FRACTION,':FixedAssets" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':FixedAssets" sign="-" unitref="GBP">')+37;    
+        set v_sign ='-';       
+    elseif instr(v_NON_FRACTION,':FixedAssets" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':FixedAssets" unitref="u1">')+27;
+    end if;   
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Fixed Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Fixed Assets',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Fixed Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='CurrentAssets' then
+    if instr(v_NON_FRACTION,':CurrentAssets" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CurrentAssets" unitref="GBP">')+30;
+    elseif instr(v_NON_FRACTION,':CurrentAssets" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CurrentAssets" sign="-" unitref="GBP">')+39;    
+        set v_sign ='-'; 
+    elseif instr(v_NON_FRACTION,':CurrentAssets" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':CurrentAssets" unitref="u1">')+29;
+    end if;       
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Current Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Current Assets',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Current Assets' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='NetCurrentAssetsLiabilities' then
+    if instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" unitref="GBP">')+44;
+    elseif instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" sign="-" unitref="GBP">')+53;    
+        set v_sign ='-';     
+    elseif instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':NetCurrentAssetsLiabilities" unitref="u1">')+43;
+    end if;       
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Net Current Assets Liabilities' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Net Current Assets Liabilities',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Net Current Assets Liabilities' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='TotalAssetsLessCurrentLiabilities' then
+    if instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" unitref="GBP">')+50;
+    elseif instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" sign="-" unitref="GBP">')+59;    
+        set v_sign ='-'; 
+    elseif instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':TotalAssetsLessCurrentLiabilities" unitref="u1">')+49;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Working Capital' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Working Capital',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Working Capital' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+if v_TYPE='Equity' then
+    if instr(v_NON_FRACTION,':Equity" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Equity" unitref="GBP">')+23;
+    elseif instr(v_NON_FRACTION,':Equity" sign="-" unitref="GBP">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Equity" sign="-" unitref="GBP">')+32;    
+        set v_sign ='-';        
+    elseif instr(v_NON_FRACTION,':Equity" unitref="u1">')>0 then
+        set v_st_pos = instr(v_NON_FRACTION,':Equity" unitref="u1">')+22;
+    end if;
+    set v_en_pos = instr(v_NON_FRACTION,'</ix:nonfraction>');
+    set v_value = concat(ifnull(v_sign, ''),ifnull(substr(v_NON_FRACTION ,v_st_pos,v_en_pos-v_st_pos), ''));
+    if instr(v_NON_FRACTION,'2017')>0 then 
+        set v_year = '2017';
+    elseif instr(v_NON_FRACTION,'2018')>0 then 
+        set v_year = '2018';
+    end if;
+    if v_year is null then
+        if instr(v_NON_FRACTION,'PREVIOUS_FY_END')>0 then 
+            set v_year = '2017';
+        elseif instr(v_NON_FRACTION,'CURRENT_FY_END')>0 then 
+            set v_year = '2018';
+        end if;
+    end if;
+    select count(1) into v_cnt from PY_MAIN where url=v_url and type='Equity' and ifnull(year,'X')=ifnull(v_year,'X');
+    if v_cnt=0 then
+    insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values(v_url,'Equity',v_value,v_year);
+    else
+    update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Equity' and ifnull(year,'X')=ifnull(v_year,'X');
+    end if;
+end if;
+END LOOP;
+  CLOSE cursor_i;
+
+begin declare exit handler for sqlexception begin 
+ end;
+select ((select sum(to_number(replace(VALUE_FIELD,',',''))) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2017)-
+        (select sum(to_number(replace(VALUE_FIELD,',',''))) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2018)) into v_de from dual;
+/*if nvl(v_de,0)=0 then
+    select ((select to_number(VALUE_FIELD) from PY_MAIN where url=v_url and type='Property Plant Equipment' and year=2017)-
+        (select to_number(VALUE_FIELD) from PY_MAIN where url=v_url and type='Property Plant Equipment' and year=2018)) into v_de from dual;
+end if;*/
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR)
+select v_url,'Depreciation',v_de,2018 from dual;
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR)
+select v_url,'Depreciation',0,2017 from dual;
+end;
+
+begin declare exit handler for sqlexception begin 
+ end;
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
+select v_url,'Current Liabilities',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type='Creditors' group by year;
+ end;
+
+begin declare exit handler for sqlexception begin 
+ end;
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
+select v_url,'Share Equity',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type='Equity' group by year;
+ end;
+
+begin declare exit handler for sqlexception begin 
+ end;
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
+select v_url,'Total Assets',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type in('Current Assets','Fixed Assets','Property Plant Equipment') group by year;
+ end;
+
+begin declare exit handler for sqlexception begin 
+ end;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_ass_2018 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2018)=2018;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_liab_2018 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2018)=2018;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_equi_2018 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2018)=2018;
+
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values (v_url,'Long Term Debt',ifnull(v_tot_ass_2018,0)-ifnull(v_tot_liab_2018,0)-ifnull(v_equi_2018,0),'2018');
+ end;
+
+begin declare exit handler for sqlexception begin 
+ end;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_ass_2017 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2017)=2017;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_liab_2017 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2017)=2017;
+select sum(to_number(replace(VALUE_FIELD,',',''))) into v_equi_2017 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2017)=2017;
+
+insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values (v_url,'Long Term Debt',ifnull(v_tot_ass_2018,0)-ifnull(v_tot_liab_2018,0)-ifnull(v_equi_2018,0),'2017');
+ end;
+
+-- for 2018
+begin declare exit handler for sqlexception begin 
+ end;
+insert into PY_COMP_FINAL (URL,NAME,REGNUMBER,YEAR,WC,COS,CA,FA,TA,DE,PPE,SGA,LTD,CL) values
+(p_url,
+(select to_char(VALUE_FIELD) from PY_MAIN 
+where TYPE='Company Name' and url=v_url  limit 1),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Registered Number' and url=v_url limit 1),
+2018,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Working Capital' and url=v_url and ifnull(year,'2018')='2018'),
+0,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Current Assets' and url=v_url and ifnull(year,'2018')='2018'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2018'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Total Assets' and url=v_url and ifnull(year,'2018')='2018'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Depreciation' and url=v_url and ifnull(year,'2018')='2018'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2018'),
+0,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Long Term Debt' and url=v_url and ifnull(year,'2018')='2018'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Current Liabilities' and url=v_url and ifnull(year,'2018')='2018'));
+ end;
+-- for 2017
+begin declare exit handler for sqlexception begin 
+ end;
+insert into PY_COMP_FINAL (URL,NAME,REGNUMBER,YEAR,WC,COS,CA,FA,TA,DE,PPE,SGA,LTD,CL) values
+(p_url,
+(select to_char(VALUE_FIELD) from PY_MAIN 
+where TYPE='Company Name' and url=v_url limit 1),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Registered Number' and url=v_url limit 1),
+2017,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Working Capital' and url=v_url and ifnull(year,'2018')='2017'),
+0,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Current Assets' and url=v_url and ifnull(year,'2018')='2017'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2017'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Total Assets' and url=v_url and ifnull(year,'2018')='2017'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Depreciation' and url=v_url and ifnull(year,'2018')='2017'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2017'),
+0,
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Long Term Debt' and url=v_url and ifnull(year,'2018')='2017'),
+(select to_char(VALUE_FIELD) from PY_MAIN
+where TYPE='Current Liabilities' and url=v_url and ifnull(year,'2018')='2017'));
+ end;
+end;
