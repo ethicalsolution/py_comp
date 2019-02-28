@@ -44,12 +44,12 @@ CREATE INDEX  PY_PRE_INSERT_IDX1 ON  PY_PRE_INSERT (URL);
 
 CREATE DEFINER=`clearsightext`@`%` PROCEDURE `sp_company_value`(in p_url varchar(4000))
 begin
-declare v_name varchar(2000);
-declare v_reg varchar(2000);
+declare v_name varchar(10000);
+declare v_reg varchar(10000);
 declare v_url varchar(500);
 declare v_st_pos double;
 declare v_en_pos double;
-declare v_value varchar(2000);
+declare v_value varchar(10000);
 declare v_year varchar(2000);
 declare v_de double DEFAULT 0;
 declare v_tot_ass_2018 double DEFAULT 0;
@@ -66,18 +66,16 @@ declare v_ta_2018 double DEFAULT 0;
 declare v_sq_2017 double DEFAULT 0;
 declare v_sq_2018 double DEFAULT 0;
 declare v_sign varchar(10);
-declare v_TYPE varchar(10);
+declare v_TYPE varchar(100);
 declare v_NON_FRACTION varchar(10000);
-declare not_found int default 0;
- DECLARE done INT DEFAULT FALSE;
+ DECLARE done INTEGER DEFAULT 0;
 
 DECLARE cursor_i CURSOR FOR select NON_FRACTION,TYPE,RN from PY_PRE_INSERT where url=v_url order by rn;
- declare continue handler for not found set not_found = 1; 
-#declare continue handler for not found set done = TRUE; 
+declare continue handler for not found set done = 1; 
 
 set v_url =p_url;
 delete from PY_MAIN where url=v_url;
-delete from PY_COMP_FINAL where url=v_url;
+delete from company_ann_reports where url=v_url;
 
 update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"','') where url=v_url;
 update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,' xmlns:ix="http://www.xbrl.org/2008/inlineXBRL"','') where url=v_url;
@@ -92,7 +90,7 @@ update PY_PRE_INSERT set NON_FRACTION=replace(NON_FRACTION,'<span style="margin-
 OPEN cursor_i;
   read_loop: LOOP
     FETCH cursor_i INTO v_NON_FRACTION,v_TYPE,v_RN;
-    IF done THEN
+    IF done=1 THEN
       LEAVE read_loop;
     END IF;
 set v_st_pos =0;
@@ -101,6 +99,8 @@ set v_value = null;
 set v_year =null;
 set v_cnt =0;
 set v_sign =null;
+#SELECT concat(v_TYPE) AS `Title`; 
+
 if v_TYPE='CompanyName' then
     set v_st_pos = instr(v_NON_FRACTION,':EntityCurrentLegalOrRegisteredName">')+37;
     set v_en_pos = instr(v_NON_FRACTION,'</ix:nonnumeric>');
@@ -492,13 +492,13 @@ if v_TYPE='Equity' then
     update PY_MAIN set VALUE_FIELD=v_value where url=v_url and type='Equity' and ifnull(year,'X')=ifnull(v_year,'X');
     end if;
 end if;
-END LOOP;
+
+END LOOP read_loop;
   CLOSE cursor_i;
 
-begin declare exit handler for sqlexception begin 
- end;
-select ((select sum(to_number(replace(VALUE_FIELD,',',''))) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2017)-
-        (select sum(to_number(replace(VALUE_FIELD,',',''))) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2018)) into v_de from dual;
+#begin declare exit handler for sqlexception begin 
+select ((select sum(cast(replace(VALUE_FIELD,',','') as signed)) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2017)-
+        (select sum(cast(replace(VALUE_FIELD,',','') as signed)) from PY_MAIN where url=v_url and type in('Fixed Assets','Property Plant Equipment') and year=2018)) into v_de from dual;
 /*if nvl(v_de,0)=0 then
     select ((select to_number(VALUE_FIELD) from PY_MAIN where url=v_url and type='Property Plant Equipment' and year=2017)-
         (select to_number(VALUE_FIELD) from PY_MAIN where url=v_url and type='Property Plant Equipment' and year=2018)) into v_de from dual;
@@ -507,100 +507,93 @@ insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR)
 select v_url,'Depreciation',v_de,2018 from dual;
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR)
 select v_url,'Depreciation',0,2017 from dual;
-end;
+#end;
 
-begin declare exit handler for sqlexception begin 
- end;
+#begin declare exit handler for sqlexception begin 
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
-select v_url,'Current Liabilities',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type='Creditors' group by year;
- end;
+select v_url,'Current Liabilities',sum(cast(replace(VALUE_FIELD,',','') as signed)),year from PY_MAIN where url=v_url and type='Creditors' group by year;
+ #end;
 
-begin declare exit handler for sqlexception begin 
- end;
+#begin declare exit handler for sqlexception begin 
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
-select v_url,'Share Equity',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type='Equity' group by year;
- end;
+select v_url,'Share Equity',sum(cast(replace(VALUE_FIELD,',','') as signed)),year from PY_MAIN where url=v_url and type='Equity' group by year;
+ #end;
 
-begin declare exit handler for sqlexception begin 
- end;
+#begin declare exit handler for sqlexception begin 
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) 
-select v_url,'Total Assets',sum(to_number(replace(VALUE_FIELD,',',''))),year from PY_MAIN where url=v_url and type in('Current Assets','Fixed Assets','Property Plant Equipment') group by year;
- end;
+select v_url,'Total Assets',sum(cast(replace(VALUE_FIELD,',','') as signed)),year from PY_MAIN where url=v_url and type in('Current Assets','Fixed Assets','Property Plant Equipment') group by year;
+ #end;
 
-begin declare exit handler for sqlexception begin 
- end;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_ass_2018 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2018)=2018;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_liab_2018 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2018)=2018;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_equi_2018 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2018)=2018;
+#begin declare exit handler for sqlexception begin 
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_tot_ass_2018 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2018)=2018;
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_tot_liab_2018 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2018)=2018;
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_equi_2018 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2018)=2018;
 
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values (v_url,'Long Term Debt',ifnull(v_tot_ass_2018,0)-ifnull(v_tot_liab_2018,0)-ifnull(v_equi_2018,0),'2018');
- end;
+ #end;
 
-begin declare exit handler for sqlexception begin 
- end;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_ass_2017 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2017)=2017;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_tot_liab_2017 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2017)=2017;
-select sum(to_number(replace(VALUE_FIELD,',',''))) into v_equi_2017 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2017)=2017;
+#begin declare exit handler for sqlexception begin 
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_tot_ass_2017 from PY_MAIN where url=v_url and type='Total Assets' and ifnull(year,2017)=2017;
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_tot_liab_2017 from PY_MAIN where url=v_url and type='Current Liabilities' and ifnull(year,2017)=2017;
+select sum(cast(replace(VALUE_FIELD,',','') as signed)) into v_equi_2017 from PY_MAIN where url=v_url and type='Share Equity' and ifnull(year,2017)=2017;
 
 insert into PY_MAIN(url,TYPE,VALUE_FIELD,YEAR) values (v_url,'Long Term Debt',ifnull(v_tot_ass_2018,0)-ifnull(v_tot_liab_2018,0)-ifnull(v_equi_2018,0),'2017');
- end;
+ #end;
 
 -- for 2018
-begin declare exit handler for sqlexception begin 
- end;
-insert into PY_COMP_FINAL (URL,NAME,REGNUMBER,YEAR,WC,COS,CA,FA,TA,DE,PPE,SGA,LTD,CL) values
+#begin declare exit handler for sqlexception begin 
+insert into company_ann_reports (URL,NAME,REGNUMBER,YEAR,work_cap,COS,curr_ass ,fix_ass ,tot_ass ,depr_amort ,PPE,SGA,Long_term_d ,curr_lia ) values
 (p_url,
-(select to_char(VALUE_FIELD) from PY_MAIN 
+(select VALUE_FIELD from PY_MAIN 
 where TYPE='Company Name' and url=v_url  limit 1),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Registered Number' and url=v_url limit 1),
 2018,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Working Capital' and url=v_url and ifnull(year,'2018')='2018'),
 0,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Current Assets' and url=v_url and ifnull(year,'2018')='2018'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2018'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Total Assets' and url=v_url and ifnull(year,'2018')='2018'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Depreciation' and url=v_url and ifnull(year,'2018')='2018'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2018'),
 0,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Long Term Debt' and url=v_url and ifnull(year,'2018')='2018'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Current Liabilities' and url=v_url and ifnull(year,'2018')='2018'));
- end;
+ #end;
 -- for 2017
-begin declare exit handler for sqlexception begin 
- end;
-insert into PY_COMP_FINAL (URL,NAME,REGNUMBER,YEAR,WC,COS,CA,FA,TA,DE,PPE,SGA,LTD,CL) values
+#begin declare exit handler for sqlexception begin 
+insert into company_ann_reports (URL,NAME,REGNUMBER,YEAR,work_cap,COS,curr_ass ,fix_ass ,tot_ass ,depr_amort ,PPE,SGA,Long_term_d ,curr_lia ) values
 (p_url,
-(select to_char(VALUE_FIELD) from PY_MAIN 
+(select VALUE_FIELD from PY_MAIN 
 where TYPE='Company Name' and url=v_url limit 1),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Registered Number' and url=v_url limit 1),
 2017,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Working Capital' and url=v_url and ifnull(year,'2018')='2017'),
 0,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Current Assets' and url=v_url and ifnull(year,'2018')='2017'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2017'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Total Assets' and url=v_url and ifnull(year,'2018')='2017'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Depreciation' and url=v_url and ifnull(year,'2018')='2017'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Fixed Assets' and url=v_url and ifnull(year,'2018')='2017'),
 0,
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Long Term Debt' and url=v_url and ifnull(year,'2018')='2017'),
-(select to_char(VALUE_FIELD) from PY_MAIN
+(select VALUE_FIELD from PY_MAIN
 where TYPE='Current Liabilities' and url=v_url and ifnull(year,'2018')='2017'));
- end;
-end;
+ #end;
+end
